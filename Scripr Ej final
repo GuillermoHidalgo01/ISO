@@ -1,0 +1,65 @@
+#Creamos las UO para crear las distintas clases del curso
+
+New-ADOrganizationalUnit -Name “Cursos” -Path "dc=andel,dc=local"
+New-ADOrganizationalUnit -Name “GCVBS” -Path "ou=Cursos,dc=andel,dc=local"
+New-ADOrganizationalUnit -Name “GCVSG“ -Path "ou=Cursos,dc=andel,dc=local"
+New-ADOrganizationalUnit -Name “GCVOF“ -Path "ou=Cursos,dc=andel,dc=local"
+New-ADOrganizationalUnit -Name “CNP” -Path "ou=Cursos,dc=andel,dc=local"
+New-ADOrganizationalUnit -Name “CNPEJ“ -Path "ou=Cursos,dc=andel,dc=local"
+
+#Cada curso tiene un alumno y un coordinador
+
+#Creamos usuarios a partir de un archivo .txt
+
+gc M:\Nuevos User.txt | %{
+
+    new-aduser -name (($_).split(",")[0]) -sam (($_).split(",")[0]) -accountpassword (convertto-securestring "Andel_1928" -asplaintext -force) -enable $true
+    }
+
+Start-Sleep -Seconds 1
+
+#Ahora una vez tenemos creadas las UO y los usuarios, debemos mover esos usuarios  
+
+Move-ADObject "cn=alumnogcvbs,dc=andel,dc=local" -TargetPath "ou=GCVBS,dc=andel,dc=local"
+Move-ADObject "cn=alumnocnp,dc=andel,dc=local" -TargetPath "ou=CNP,dc=andel,dc=local"
+Move-ADObject "cn=alumnoeje,dc=andel,dc=local" -TargetPath "ou=CNPEJE,dc=andel,dc=local"
+Move-ADObject "cn=alumnogcvof,dc=andel,dc=local" -TargetPath "ou=GCVOF,dc=andel,dc=local"
+Move-ADObject "cn=alumnogcvsg,dc=andel,dc=local" -TargetPath "ou=GCVSG,dc=andel,dc=local"
+Start-Sleep -Seconds 1
+
+#Creamos unas gpos para que no tengan activo el defender por si necesitan descargar algun programa que tenga problema de virus
+
+New-GPO -Name "Windows Defender" -Comment "Deshabilita Windows Defender Antivirus"
+Set-GPRegistryValue -Name "Windows Defender" -Key "HKLM\Software\Policies\Microsoft\Windows Defender" -ValueName DisableAntiSpyware -Type DWord -Value 1
+New-GPLink -Name "Windows Defender" -Target "OU=Cursos OU=CNP,DC=andel,DC=local"
+
+#A medida que el curso va avanzando se pueden implementear bloquear las notificaciones para aquellos usuarios que lo soliciten
+
+New-GPO -Name "Notificaciones usuario" -Comment "Deshabilita las notificaciones"
+Set-GPRegistryValue -Name "cooreje" -Key "HKCU\Software\Policies\Microsoft\Windows\CurrentVersion\PushNotifications" -ValueName NoToastApplicationNotification -Type DWord -Value 1
+Set-GPRegistryValue -Name "alumnocnp" -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" -ValueName TaskbarNoNotification -Type DWord -Value 1
+Set-GPRegistryValue -Name "alumnogcvbs" -Key "HKCU\Software\Policies\Microsoft\Windows\Explorer" -ValueName DisableNotificationCenter -Type DWord -Value 1
+New-GPLink -Name "Notificaciones usuario" -Target "OU=Cursos,DC=andel,DC=local"
+
+#Todo usuario tiene bloqueado el CMD (usuario de alumno, todos los coordinadores del curso estan en todos los grupos de admin)
+
+New-GPO -Name "Cortana" -Comment "Deshabilita las funciones de Cortana"
+Set-GPRegistryValue -Name "Cortana" -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -ValueName AllowCortana -Type DWord -Value 0
+Set-GPRegistryValue -Name "Cortana" -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -ValueName AllowCortanaAboveLock -Type DWord -Value 0
+Set-GPRegistryValue -Name "Cortana" -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -ValueName AllowSearchToUseLocation -Type DWord -Value 0
+New-GPLink -Name "Cortana" -Target "OU=andel,DC=local,"
+
+#Auditar el control de un usuario
+
+# 4624: An account was successfully logged on
+Get-EventLog -LogName Security -InstanceId 4624 |
+  ForEach-Object {
+    # Convertir el contenido del log en un objeto
+    [PSCustomObject]@{
+        Time = $_.TimeGenerated
+        Usuario = "{0}\{1}" -f $_.ReplacementStrings[5], $_.ReplacementStrings[6]
+        Type = $_.ReplacementStrings[10]
+        Path = $_.ReplacementStrings[17]
+    }
+  }
+  
